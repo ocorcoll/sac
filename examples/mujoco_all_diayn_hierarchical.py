@@ -1,25 +1,21 @@
 """Script for launching DIAYN experiments.
 
 Usage:
-    python mujoco_all_diayn.py --env=point --snapshot_dir=<snapshot_dir> --log_dir=/dev/null
+    python mujoco_all_diayn_hierarchical.py --env=point --snapshot_dir=<snapshot_dir> --log_dir=/dev/null
 """
+import argparse
+import joblib
+import os
+import tensorflow as tf
 
 from rllab.misc.instrument import VariantGenerator
-
 from sac.algos import SAC
-from sac.envs.meta_env import FixedOptionEnv
 from sac.misc.instrument import run_sac_experiment
-from sac.misc.sampler import rollouts
 from sac.misc.utils import timestamp
-from sac.policies.hierarchical_policy import FixedOptionPolicy
+from sac.policies.hierarchical_policy import HierarchicalPolicy
 from sac.replay_buffers import SimpleReplayBuffer
 from sac.value_functions import NNQFunction, NNVFunction
 
-import argparse
-import joblib
-import numpy as np
-import os
-import tensorflow as tf
 
 
 SHARED_PARAMS = {
@@ -139,8 +135,8 @@ ENV_PARAMS = {
         'prefix': 'hand-reach',
         'env_name': 'HandReach-v0',
         'max_path_length': 500,
-        'n_epochs': 50,
-        'scale_reward': 5,
+        'n_epochs': 1000,
+        'scale_reward': 10,
     },
     'hand-block': {
         'prefix': 'hand-block',
@@ -160,6 +156,7 @@ ENV_PARAMS = {
 DEFAULT_ENV = 'swimmer'
 AVAILABLE_ENVS = list(ENV_PARAMS.keys())
 
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--env',
@@ -173,6 +170,7 @@ def parse_args():
     args = parser.parse_args()
 
     return args
+
 
 def get_variants(args):
     env_params = ENV_PARAMS[args.env]
@@ -189,41 +187,23 @@ def get_variants(args):
     return vg
 
 
-
-def get_best_skill(policy, env, num_skills, max_path_length):
-    tf.logging.info('Finding best skill to finetune...')
-    reward_list = []
-    with policy.deterministic(True):
-        for z in range(num_skills):
-            fixed_z_policy = FixedOptionPolicy(policy, num_skills, z)
-            new_paths = rollouts(env, fixed_z_policy,
-                                 max_path_length, n_paths=2)
-            total_returns = np.mean([path['rewards'].sum() for path in new_paths])
-            tf.logging.info('Reward for skill %d = %.3f', z, total_returns)
-            reward_list.append(total_returns)
-
-    best_z = np.argmax(reward_list)
-    tf.logging.info('Best skill found: z = %d, reward = %d', best_z,
-                    reward_list[best_z])
-    return best_z
-
-
-
 def run_experiment(variant):
     tf.logging.set_verbosity(tf.logging.INFO)
     with tf.Session() as sess:
         data = joblib.load(variant['snapshot_filename'])
+        #print(data.keys())
+        # p(z|s)
+        discriminator = data['discriminator']
+        # p(a|s,z)
         policy = data['policy']
         env = data['env']
+        M = variant['layer_size']
 
-        num_skills = data['policy'].observation_space.flat_dim - data['env'].spec.observation_space.flat_dim
-        best_z = get_best_skill(policy, env, num_skills, variant['max_path_length'])
-        fixed_z_env = FixedOptionEnv(env, num_skills, best_z)
-
-        tf.logging.info('Finetuning best skill...')
+        num_skills = policy.observation_space.flat_dim - env.spec.observation_space.flat_dim
+        policy = HierarchicalPolicy(env.spec, policy, num_skills, discriminator, steps_per_option=10)
 
         pool = SimpleReplayBuffer(
-            env_spec=fixed_z_env.spec,
+            env_spec=env.spec,
             max_replay_buffer_size=variant['max_pool_size'],
         )
 
@@ -239,8 +219,6 @@ def run_experiment(variant):
             eval_deterministic=True,
         )
 
-        M = variant['layer_size']
-
         if variant['use_pretrained_values']:
             qf = data['qf']
             vf = data['vf']
@@ -249,20 +227,20 @@ def run_experiment(variant):
             del data['vf']
 
             qf = NNQFunction(
-                env_spec=fixed_z_env.spec,
+                env_spec=env.spec,
                 hidden_layer_sizes=[M, M],
                 var_scope='qf-finetune',
             )
 
             vf = NNVFunction(
-                env_spec=fixed_z_env.spec,
+                env_spec=env.spec,
                 hidden_layer_sizes=[M, M],
                 var_scope='vf-finetune',
             )
 
         algorithm = SAC(
             base_kwargs=base_kwargs,
-            env=fixed_z_env,
+            env=env,
             policy=policy,
             pool=pool,
             qf=qf,
@@ -281,7 +259,7 @@ def launch_experiments(variant_generator):
     variants = variant_generator.variants()
 
     for i, variant in enumerate(variants):
-        tag = 'finetune__'
+        tag = 'hierarchical__'
         print(variant['snapshot_filename'])
         tag += variant['snapshot_filename'].split('/')[-2]
         tag += '____'
@@ -304,6 +282,7 @@ def launch_experiments(variant_generator):
             snapshot_gap=variant['snapshot_gap'],
             sync_s3_pkl=variant['sync_pkl'],
         )
+
 
 if __name__ == '__main__':
     args = parse_args()

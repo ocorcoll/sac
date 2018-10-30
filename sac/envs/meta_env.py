@@ -25,12 +25,15 @@ class MetaEnv(Serializable):
             (action, _) = self._base_policy.get_action(aug_obs)
             (self._obs, r, done, _) = self._env.step(action)
             total_reward += r
-            if done: break
+            if done:
+                break
+
         # Normalize the total reward by number of steps
+        #return (self._obs['observation'], total_reward / float(self._steps_per_option), done, {})
         return (self._obs, total_reward / float(self._steps_per_option), done, {})
 
     def reset(self):
-        return self._env.reset()
+        return self._env.reset()#['observation']
 
     def log_diagnostics(self, paths):
         self._env.log_diagnostics(paths)
@@ -54,11 +57,12 @@ class FixedOptionEnv(Serializable):
 
     def step(self, action):
         (obs, r, done, info) = self._env.step(action)
+        #aug_obs = concat_obs_z(obs['observation'], self._z, self._num_skills)
         aug_obs = concat_obs_z(obs, self._z, self._num_skills)
         return (aug_obs, r, done, info)
 
     def reset(self):
-        obs = self._env.reset()
+        obs = self._env.reset()#['observation']
         aug_obs = concat_obs_z(obs, self._z, self._num_skills)
         return aug_obs
 

@@ -7,7 +7,7 @@ import traceback
 import logging
 
 try:
-    from gym.wrappers.monitoring import logger as monitor_logger
+    from gym import logger as monitor_logger
 
     monitor_logger.setLevel(logging.WARNING)
 except Exception as e:
@@ -30,6 +30,8 @@ def convert_gym_space(space):
         return Discrete(n=space.n)
     elif isinstance(space, gym.spaces.Tuple):
         return Product([convert_gym_space(x) for x in space.spaces])
+    elif isinstance(space, gym.spaces.Dict):
+        return Box(low=space.spaces['observation'].low, high=space.spaces['observation'].high)
     else:
         raise NotImplementedError
 
@@ -67,6 +69,7 @@ class GymEnv(Env, Serializable):
         Serializable.quick_init(self, locals())
 
         env = gym.envs.make(env_name)
+        env.env.reward_type = "dense"
 
         # HACK: Gets rid of the TimeLimit wrapper that sets 'done = True' when
         # the time limit specified for each environment has been passed and
@@ -117,15 +120,16 @@ class GymEnv(Env, Serializable):
             recorder = self.env.stats_recorder
             if recorder is not None:
                 recorder.done = True
-        return self.env.reset()
+        return self.env.reset()['observation']
 
     def step(self, action):
         next_obs, reward, done, info = self.env.step(action)
-        return Step(next_obs, reward, done, **info)
+        return Step(next_obs['observation'], reward, done, **info)
+        #return Step(next_obs, reward, done, **info)
 
     def render(self, mode='human', close=False):
-        return self.env._render(mode, close)
-        # self.env.render()
+        #return self.env._render(mode, close)
+        self.env.render()
 
     def terminate(self):
         if self.monitoring:

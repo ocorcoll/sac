@@ -108,7 +108,6 @@ class DIAYN(SAC):
         self._init_discriminator_update()
         self._init_target_ops()
 
-
         self._sess.run(tf.global_variables_initializer())
 
     def _init_placeholders(self):
@@ -257,7 +256,6 @@ class DIAYN(SAC):
         self._training_ops.append(policy_train_op)
         self._training_ops.append(vf_train_op)
 
-
     def _init_discriminator_update(self):
         (obs, z_one_hot) = self._split_obs()
         if self._include_actions:
@@ -276,7 +274,6 @@ class DIAYN(SAC):
             var_list=self._discriminator.get_params_internal()
         )
         self._training_ops.append(discriminator_train_op)
-
 
     def _get_feed_dict(self, batch):
         """Construct TensorFlow feed_dict from sample batch."""
@@ -336,6 +333,7 @@ class DIAYN(SAC):
 
         if epoch % self._find_best_skill_interval == 0:
             self._single_option_policy = self._get_best_single_option_policy()
+
         for (policy, policy_name) in [(self._single_option_policy, 'best_single_option_policy')]:
             with logger.tabular_prefix(policy_name + '/'), logger.prefix(policy_name + '/'):
                 with self._policy.deterministic(self._eval_deterministic):

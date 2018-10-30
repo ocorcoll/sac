@@ -14,7 +14,7 @@ from sac.misc.instrument import run_sac_experiment
 from sac.misc.utils import timestamp
 from sac.policies.gmm import GMMPolicy
 from sac.replay_buffers import SimpleReplayBuffer
-from sac.value_functions import NNQFunction, NNVFunction, NNDiscriminatorFunction
+from sac.value_functions import NNQFunction, NNVFunction, NNDiscriminatorFunction, NNSkillFunction
 
 import argparse
 import numpy as np
@@ -47,38 +47,38 @@ TAG_KEYS = ['seed']
 ENV_PARAMS = {
     'swimmer': { # 2 DoF
         'prefix': 'swimmer',
-        'env_name': 'Swimmer-v1',
+        'env_name': 'Swimmer-v2',
         'max_path_length': 1000,
         'n_epochs': 10000,
     },
     'hopper': { # 3 DoF
         'prefix': 'hopper',
-        'env_name': 'Hopper-v1',
+        'env_name': 'Hopper-v2',
         'max_path_length': 1000,
         'n_epochs': 10000,
     },
     'half-cheetah': { # 6 DoF
         'prefix': 'half-cheetah',
-        'env_name': 'HalfCheetah-v1',
+        'env_name': 'HalfCheetah-v2',
         'max_path_length': 1000,
         'n_epochs': 10000,
         'max_pool_size': 1E7,
     },
     'walker': { # 6 DoF
         'prefix': 'walker',
-        'env_name': 'Walker2d-v1',
+        'env_name': 'Walker2d-v2',
         'max_path_length': 1000,
         'n_epochs': 10000,
     },
     'ant': { # 8 DoF
         'prefix': 'ant',
-        'env_name': 'Ant-v1',
+        'env_name': 'Ant-v2',
         'max_path_length': 1000,
         'n_epochs': 10000,
     },
     'humanoid': { # 21 DoF
         'prefix': 'humanoid',
-        'env_name': 'Humanoid-v1',
+        'env_name': 'Humanoid-v2',
         'max_path_length': 1000,
         'n_epochs': 20000,
     },
@@ -92,13 +92,13 @@ ENV_PARAMS = {
     },
     'inverted-pendulum': {
         'prefix': 'inverted-pendulum',
-        'env_name': 'InvertedPendulum-v1',
+        'env_name': 'InvertedPendulum-v2',
         'max_path_length': 1000,
         'n_epochs': 1000,
     },
     'inverted-double-pendulum': {
         'prefix': 'inverted-double-pendulum',
-        'env_name': 'InvertedDoublePendulum-v1',
+        'env_name': 'InvertedDoublePendulum-v2',
         'max_path_length': 1000,
         'n_epochs': 1000,
     },
@@ -130,9 +130,30 @@ ENV_PARAMS = {
         'n_epochs': 1000,
         'scale_entropy': 0.1,
     },
+    'hand-reach': {
+        'prefix': 'hand-reach',
+        'env_name': 'HandReach-v0',
+        'max_path_length': 1000,
+        'n_epochs': 1000,
+        'scale_entropy': 0.01,
+    },
+    'hand-block': {
+        'prefix': 'hand-block',
+        'env_name': 'HandManipulateBlock-v0',
+        'max_path_length': 1000,
+        'n_epochs': 1000,
+        'scale_entropy': 0.01,
+    },
+    'fetch-reach': {
+        'prefix': 'fetch-reach',
+        'env_name': 'FetchReach-v1',
+        'max_path_length': 1000,
+        'n_epochs': 1000,
+    },
 }
 DEFAULT_ENV = 'swimmer'
 AVAILABLE_ENVS = list(ENV_PARAMS.keys())
+
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -215,6 +236,12 @@ def run_experiment(variant):
         reg=0.001,
     )
 
+    skill_policy = NNSkillFunction(
+        env_spec=env.spec,
+        hidden_layer_sizes=[M, M],
+        num_skills=variant['num_skills'],
+    )
+
     discriminator = NNDiscriminatorFunction(
         env_spec=env.spec,
         hidden_layer_sizes=[M, M],
@@ -226,6 +253,7 @@ def run_experiment(variant):
         env=env,
         policy=policy,
         discriminator=discriminator,
+        skill_policy=skill_policy,
         pool=pool,
         qf=qf,
         vf=vf,
@@ -235,6 +263,8 @@ def run_experiment(variant):
         discount=variant['discount'],
         tau=variant['tau'],
         num_skills=variant['num_skills'],
+        find_best_skill_interval=1,
+        best_skill_n_rollouts=5,
         save_full_state=False,
         include_actions=variant['include_actions'],
         learn_p_z=variant['learn_p_z'],
@@ -266,6 +296,7 @@ def launch_experiments(variant_generator):
             snapshot_gap=variant['snapshot_gap'],
             sync_s3_pkl=variant['sync_pkl'],
         )
+
 
 if __name__ == '__main__':
     args = parse_args()
